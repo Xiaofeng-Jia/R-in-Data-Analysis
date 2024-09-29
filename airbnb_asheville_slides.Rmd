@@ -1,0 +1,124 @@
+---
+title: "Asheville Airbnb Explorer"
+author: "Doug Lehmann"
+output:
+  ioslides_presentation:
+    widescreen: true
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+# Load Packages
+library(dplyr)
+library(shiny)
+library(stringr)
+library(ggplot2)
+library(leaflet)
+library(scales)
+
+# Load and Clean Data
+asheville = read.csv('/Users/crazycat/Documents/academic/5th year/MAS 627 R/Day 12/publish/asheville.csv') %>%
+  mutate(
+    accommodates = factor(accommodates),
+    all_text = str_c(description, ' ', amenities, ' ', name)
+  ) %>%
+  rename(superhost = host_is_superhost)
+
+# Separate ui functions (rather than separate tabs on one ui, I'll print them on separate slides)
+
+# ui for map
+ui1 = fluidPage(
+  fluidRow(
+    column(4, selectInput('room_type', 'Room Type?', choices=c('All', 'Entire home/apt', 'Private room', 'Shared room', 'Hotel room'))),
+    column(4,
+      fluidRow(
+        column(6, numericInput('minPrice', 'Min Price:', value=0, step=10)),
+        column(6, numericInput('maxPrice', 'Max Price:', value=10000, step=10))
+      )),
+    column(4, textInput('desc', 'Description?', placeholder='Enter Keyword'))
+  ),
+  leafletOutput('airbnb_map')
+)
+
+
+# ui for pricing bars
+ui2 = fluidPage(
+      sidebarLayout(
+        sidebarPanel(
+          selectInput('price_group', 'Price By?', choices=c('Room Type' = 'room_type', 
+                                                            'Accommodates'='accommodates', 
+                                                            'Superhost'='superhost'))
+        ),
+          mainPanel(
+            plotOutput('price_bars')
+            )
+      )
+)
+
+# Create Server function
+server = function(input, output){
+  
+  
+  output$airbnb_map = renderLeaflet({
+    rows = TRUE
+    if(input$room_type != 'All') rows = rows & asheville$room_type == input$room_type
+    if(input$desc != '') rows = rows & str_detect(asheville$all_text, regex(input$desc, ignore_case=T))
+    asheville[rows, ] %>%
+      filter(
+        price >= input$minPrice,
+        price <= input$maxPrice
+      ) %>%
+    leaflet( ) %>%
+      addTiles() %>%
+      addCircleMarkers(radius=7, opacity=.75, label=~label, popup=~popup,
+                       clusterOptions = markerClusterOptions())
+  })
+  
+  
+  output$price_bars = renderPlot({
+    asheville %>%
+      group_by_at(input$price_group) %>%
+      summarise(avg_price = mean(price)) %>%
+      ggplot(aes_string(y=input$price_group, x='avg_price')) + 
+      geom_col() +
+      labs(y='', x='Average Price', title=str_c('Average Price by ', input$price_group)) +
+      scale_x_continuous(labels=dollar) + 
+      theme(
+        axis.text = element_text(face='bold', size=12)
+      )
+  })
+  
+}
+
+```
+
+## Agenda
+
+* Introduction
+* Data
+* Methods
+* Find your AirBnB!
+* Pricing Considerations
+* Conclusions and Future Work
+
+## Data
+
+Our data comes from [Airbnb](insideairbnb.com). It contains information on `r nrow(asheville)` rental properties in the Asheville area.
+
+## Methods
+
+We turn to `leaflet` to display these properties on a map and allow the user to filter for a property that fits their criteria.
+
+## Find your AirBnB!
+
+```{r}
+shinyApp(ui1, server)
+```
+
+## Pricing Considerations
+
+```{r}
+shinyApp(ui2, server)
+```
